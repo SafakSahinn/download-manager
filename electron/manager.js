@@ -5,7 +5,7 @@ const fsp = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
 const HttpTask = require('./httpTask');
-const { YtdlpTask } = require('./ytdlp');
+const { YtdlpTask, cleanupPartials } = require('./ytdlp');
 const { categorize, isMediaSite } = require('./categories');
 const { Throttle, sanitizeFilename } = require('./http');
 const { readJson, writeJsonSync } = require('./store');
@@ -281,6 +281,7 @@ class DownloadManager extends EventEmitter {
       if (it.kind === 'http' && it.filePath && it.status !== 'completed') {
         await fsp.rm(it.filePath + '.fdpart', { force: true }).catch(() => {});
       }
+      if (it.kind === 'media' && it.status !== 'completed') await cleanupPartials(it).catch(() => {});
       if (deleteFile && it.filePath && it.status === 'completed') {
         try {
           const { shell } = require('electron');

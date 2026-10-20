@@ -37,7 +37,24 @@ function Seg({ value, options, onChange }) {
   );
 }
 
-const SPEED_PRESETS = [0, 256, 512, 1024, 2048, 5120, 10240];
+// Sürüklerken yerel değeri gösterir; ayar dosyasına yalnızca hareket durunca bir kez yazar
+function RangeInput({ min, max, value, onCommit }) {
+  const [local, setLocal] = useState(value);
+  useEffect(() => setLocal(value), [value]);
+  useEffect(() => {
+    if (local === value) return;
+    const h = setTimeout(() => onCommit(local), 300);
+    return () => clearTimeout(h);
+  }, [local]);
+  return (
+    <div className="range">
+      <input type="range" min={min} max={max} value={local} onChange={(e) => setLocal(+e.target.value)} />
+      <b>{local}</b>
+    </div>
+  );
+}
+
+const SPEED_PRESETS =[0, 256, 512, 1024, 2048, 5120, 10240];
 
 export default function SettingsView({ settings: s, update, pushToast }) {
   const t = useT();
@@ -120,16 +137,10 @@ export default function SettingsView({ settings: s, update, pushToast }) {
           </div>
         </Row>
         <Row title={t('maxConcurrent')} desc={t('maxConcurrentDesc')}>
-          <div className="range">
-            <input type="range" min="1" max="10" value={s.maxConcurrent} onChange={(e) => update({ maxConcurrent: +e.target.value })} />
-            <b>{s.maxConcurrent}</b>
-          </div>
+          <RangeInput min="1" max="10" value={s.maxConcurrent} onCommit={(v) => update({ maxConcurrent: v })} />
         </Row>
         <Row title={t('connectionsPer')} desc={t('connectionsPerDesc')}>
-          <div className="range">
-            <input type="range" min="1" max="32" value={s.connections} onChange={(e) => update({ connections: +e.target.value })} />
-            <b>{s.connections}</b>
-          </div>
+          <RangeInput min="1" max="32" value={s.connections} onCommit={(v) => update({ connections: v })} />
         </Row>
         <Row title={t('speedLimit')} desc={t('speedLimitDesc')}>
           <div className="speed-presets">

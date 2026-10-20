@@ -307,8 +307,11 @@ class YtdlpTask extends EventEmitter {
           item.status = 'merging';
           item.speed = 0;
           this.emit('update');
-        } else if (/^\[download\] Destination: /.test(line) && !item.filePath) {
-          item.filename = path.basename(line.replace(/^\[download\] Destination: /, ''));
+        } else if (/^\[download\] Destination: /.test(line)) {
+          const dest = line.replace(/^\[download\] Destination: /, '');
+          // İptal edilirse temizlenebilsin diye ara dosyaları kaydet
+          item.tempFiles = [...new Set([...(item.tempFiles || []), dest])];
+          if (!item.filePath) item.filename = path.basename(dest);
         }
       };
       let outBuf = '';
@@ -342,6 +345,7 @@ class YtdlpTask extends EventEmitter {
     item.status = 'completed';
     item.completedAt = Date.now();
     item.speed = 0;
+    delete item.tempFiles;
     this.emit('update');
   }
 
@@ -357,4 +361,17 @@ class YtdlpTask extends EventEmitter {
   }
 }
 
-module.exports = { ensureYtdlp, getInfo, getVersion, YtdlpTask, events: events, ffmpegPath };
+/** Yarım kalan medya indirmesinin ara dosyalarını siler (.part, .ytdl, .part-FragN, birleştirilmemiş akışlar) */
+async function cleanupPartials(item) {
+  for (const dest of item.tempFiles || []) {
+    const dir = path.dirname(dest);
+    const base = path.basename(dest);
+    await fsp.rm(dest, { force: true }).catch(() => {});
+    const names = await fsp.readdir(dir).catch(() => []);
+    for (const n of names) {
+      if (n.startsWith(base + '.part') || n === base + '.ytdl') await fsp.rm(path.join(dir, n), { force: true }).catch(() => {});
+    }
+  }
+}
+
+module.exports = { ensureYtdlp, getInfo, getVersion, YtdlpTask, cleanupPartials, events: events, ffmpegPath };
