@@ -1,0 +1,41 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <img src="icons/48.png" alt="" />
+      <div>
+        <b>Flux</b>
+        <div id="status" class="status">…</div>
+      </div>
+    </header>
+
+    <label class="row">
+      <span id="lblIntercept">Tarayıcı indirmelerini yakala</span>
+      <input type="checkbox" id="enabled" />
+    </label>
+
+    <label class="row">
+      <span id="lblFloating">Video üstünde "İndir" butonu göster</span>
+      <input type="checkbox" id="showFloatingBtn" />
+    </label>
+
+    <label class="row">
+      <span id="lblMin">Şundan küçükleri yakalama (MB)</span>
+      <input type="number" id="minSize" min="0" step="1" />
+    </label>
+
+    <div id="streamsSection" class="streams-box" style="display: none;">
+      <div class="streams-title" id="streamsTitle">Yakalanan Medyalar:</div>
+      <div id="streamsList" class="streams-list"></div>
+    </div>
+
+    <button id="grabVideo" class="primary">Bu sayfadaki videoyu indir</button>
+    <button id="grabAudio">Sadece sesi indir (MP3)</button>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

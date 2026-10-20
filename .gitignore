@@ -1,0 +1,9 @@
+node_modules/
+dist/
+release/
+*.log
+run_log.txt
+*.fdpart
+.vscode/
+.idea/
+Thumbs.db
