@@ -8,7 +8,7 @@ const HttpTask = require('./httpTask');
 const { YtdlpTask, cleanupPartials } = require('./ytdlp');
 const { categorize, isMediaSite } = require('./categories');
 const { Throttle, sanitizeFilename } = require('./http');
-const { readJson, writeJsonSync } = require('./store');
+const { readJson, writeJsonSync, writeJsonAsync } = require('./store');
 
 const ACTIVE = new Set(['probing', 'downloading', 'merging']);
 
@@ -42,18 +42,45 @@ class DownloadManager extends EventEmitter {
     }
   }
 
+  serialize() {
+    return [...this.items.values()].map(({ _last, ...it }) => ({ ...it, speed: 0 }));
+  }
+
+  // Yalnızca kapanışta: süreç bitmeden diske yazıldığından emin olmak için senkron
   saveNow() {
+    clearTimeout(this.saveTimer);
     try {
-      writeJsonSync(this.dataFile, [...this.items.values()].map(({ _last, ...it }) => ({ ...it, speed: 0 })));
+      writeJsonSync(this.dataFile, this.serialize());
       this.lastSave = Date.now();
     } catch (e) {
       console.error('Kaydetme hatası', e);
     }
   }
 
+  // Çalışırken: ana süreci bloklamadan yaz; aynı anda tek yazma, arada gelen istek sonra tekrar yazılır
+  async saveAsync() {
+    this.lastSave = Date.now();
+    if (this.closed) return;
+    if (this.saving) {
+      this.saveAgain = true;
+      return;
+    }
+    this.saving = true;
+    try {
+      do {
+        this.saveAgain = false;
+        await writeJsonAsync(this.dataFile, this.serialize());
+      } while (this.saveAgain && !this.closed);
+    } catch (e) {
+      console.error('Kaydetme hatası', e);
+    } finally {
+      this.saving = false;
+    }
+  }
+
   save() {
     clearTimeout(this.saveTimer);
-    this.saveTimer = setTimeout(() => this.saveNow(), 800);
+    this.saveTimer = setTimeout(() => this.saveAsync(), 800);
   }
 
   // ---------- UI için anlık görüntü ----------
@@ -238,7 +265,7 @@ class DownloadManager extends EventEmitter {
       if (it.status === 'downloading' || it.status === 'merging') this.emitItem(it);
     }
     // Aktif indirmelerde parça durumunu periyodik olarak kaydet (çökme sonrası devam için)
-    if (this.tasks.size && now - this.lastSave > 5000) this.saveNow();
+    if (this.tasks.size && now - this.lastSave > 5000) this.saveAsync();
   }
 
   // ---------- Eylemler ----------
@@ -327,6 +354,7 @@ class DownloadManager extends EventEmitter {
   }
 
   shutdown() {
+    this.closed = true; // bekleyen asenkron kayıtlar artık yazmasın; son sözü senkron kayıt söyler
     clearInterval(this.ticker);
     for (const [id, task] of this.tasks) {
       task.stop();

@@ -61,7 +61,10 @@ class HttpTask extends EventEmitter {
 
     // 3) Dosyayı aç
     await fsp.mkdir(path.dirname(part), { recursive: true });
-    this.fh = await fsp.open(part, exists && item.resumable ? 'r+' : 'w+');
+    const fresh = !(exists && item.resumable);
+    this.fh = await fsp.open(part, fresh ? 'w+' : 'r+');
+    // Yeni dosyada tam boyutu baştan ayır: paralel yazmalarda dosya parçalanması ve sürekli büyütme azalır
+    if (fresh && item.size) await this.fh.truncate(item.size).catch(() => {});
     if (this.stopped) {
       await this.fh.close().catch(() => {});
       this.fh = null;

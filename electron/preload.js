@@ -29,7 +29,7 @@ contextBridge.exposeInMainWorld('api', {
   updateYtdlp: invoke('ytdlp:update'),
 
   on(channel, cb) {
-    const allowed = ['dl:update', 'dl:removed', 'dl:completed', 'clipboard:url', 'external:add', 'ytdlp:install', 'theme:changed'];
+    const allowed = ['dl:updates','dl:removed', 'dl:completed', 'clipboard:url', 'external:add', 'ytdlp:install', 'theme:changed'];
     if (!allowed.includes(channel)) return () => {};
     const fn = (_, payload) => cb(payload);
     ipcRenderer.on(channel, fn);

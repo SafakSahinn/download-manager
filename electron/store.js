@@ -17,6 +17,15 @@ function writeJsonSync(file, data) {
   fs.renameSync(tmp, file);
 }
 
+// Ana süreci bloklamayan sürüm: sık yapılan kayıtlar için (girintisiz, daha küçük ve hızlı)
+async function writeJsonAsync(file, data) {
+  await fs.promises.mkdir(path.dirname(file), { recursive: true });
+  // Senkron yazmayla aynı geçici dosyayı paylaşmasın (kapanışta ikisi çakışabilir)
+  const tmp = file + '.async.tmp';
+  await fs.promises.writeFile(tmp, JSON.stringify(data), 'utf8');
+  await fs.promises.rename(tmp, file);
+}
+
 class SettingsStore {
   constructor(file, defaults) {
     this.file = file;
@@ -38,4 +47,4 @@ class SettingsStore {
   }
 }
 
-module.exports = { SettingsStore, readJson, writeJsonSync };
+module.exports = { SettingsStore, readJson, writeJsonSync, writeJsonAsync };

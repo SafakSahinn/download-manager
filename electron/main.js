@@ -291,8 +291,24 @@ app.whenReady().then(() => {
   nativeTheme.themeSource = settings.get().theme;
   manager = new DownloadManager(settings, path.join(app.getPath('userData'), 'downloads.json'));
 
-  manager.on('update', (s) => send('dl:update', s));
-  manager.on('removed', (id) => send('dl:removed', id));
+  // Güncellemeleri 100 ms'lik pencerelerde topla: her indirme için ayrı IPC + yeniden çizim yerine tek mesaj
+  const pending = new Map();
+  let flushTimer = null;
+  manager.on('update', (s) => {
+    pending.set(s.id, s);
+    if (!flushTimer) {
+      flushTimer = setTimeout(() => {
+        flushTimer = null;
+        const batch = [...pending.values()];
+        pending.clear();
+        if (batch.length) send('dl:updates', batch);
+      }, 100);
+    }
+  });
+  manager.on('removed', (id) => {
+    pending.delete(id); // silinen öğe bekleyen bir güncellemeyle geri gelmesin
+    send('dl:removed', id);
+  });
   manager.on('completed', (s) => {
     send('dl:completed', s);
     if (settings.get().notifications && Notification.isSupported()) {

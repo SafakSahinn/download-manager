@@ -40,7 +40,13 @@ export default function App() {
     api.getSettings().then(setSettings);
     api.list().then((list) => setItems(Object.fromEntries(list.map((i) => [i.id, i]))));
     const offs = [
-      api.on('dl:update', (s) => setItems((m) => ({ ...m, [s.id]: s }))),
+      api.on('dl:updates', (batch) =>
+        setItems((m) => {
+          const n = { ...m };
+          for (const s of batch) n[s.id] = s;
+          return n;
+        })
+      ),
       api.on('dl:removed', (id) =>
         setItems((m) => {
           const n = { ...m };
