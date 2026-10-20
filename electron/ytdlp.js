@@ -261,6 +261,8 @@ class YtdlpTask extends EventEmitter {
       '--encoding', 'utf-8',
       '--retries', '10',
       '--fragment-retries', '10',
+      // YouTube tek bağlantıyı yavaşlatır; dosyayı 10 MB'lık parçalarla istemek bu kısıtlamayı aşar
+      '--http-chunk-size', '10M',
       ...nodeRuntimeArgs(),
       '-N', String(Math.max(1, Math.min(8, this.ctx.connections))),
       '--progress-template',

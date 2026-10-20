@@ -7,6 +7,9 @@ const { request, probe, sleep } = require('./http');
 
 const MIN_SPLIT = 1024 * 1024; // Bir parçayı bölmek için gereken min. kalan boyut (1 MB)
 const MAX_RETRIES = 8;
+const FLUSH_BYTES = 1024 * 1024; // Bağlantı başına yazma tamponu
+const FLUSH_MS = 500; // Yavaş bağlantılarda ilerleme donmasın diye en geç bu sürede yaz
+const RECOVER_MS = 5000; // Bu süre hatasız geçerse düşürülen bağlantı sayısını bir artır
 
 class HttpTask extends EventEmitter {
   /**
@@ -138,15 +141,31 @@ class HttpTask extends EventEmitter {
     for (const seg of item.segments) if (this.remainingOf(seg) > 0 && promises.size < this.limit) launch(seg);
 
     // Bağlantı sayısı segment sayısından fazlaysa, mevcut parçaları bölerek doldur
-    if (item.resumable) {
-      while (promises.size < this.limit) {
+    const fill = () => {
+      while (!this.stopped && !this.halted && promises.size < this.limit) {
         const t = this.pickSplit();
         if (!t) break;
         launch(t);
       }
-    }
+    };
+    if (item.resumable) fill();
 
-    while (promises.size) await Promise.race(promises);
+    // Geçici bir hata yüzünden düşürülen bağlantı sayısını, ortalık sakinleşince kademeli geri kazan
+    this.lastFail = 0;
+    const recover = item.resumable
+      ? setInterval(() => {
+          if (this.limit < this.ctx.connections && Date.now() - this.lastFail > RECOVER_MS) {
+            this.limit++;
+            fill();
+          }
+        }, 1000)
+      : null;
+
+    try {
+      while (promises.size) await Promise.race(promises);
+    } finally {
+      clearInterval(recover);
+    }
     if (firstError && !this.stopped) throw firstError;
   }
 
@@ -190,6 +209,7 @@ class HttpTask extends EventEmitter {
           // kısıtlıyor olabilir. Parça, işini bitiren sağlıklı bir bağlantıca devralınır.
           if (this.item.resumable && this.active.size > 1) {
             this.limit = Math.max(1, Math.min(this.limit, this.active.size) - 1);
+            this.lastFail = Date.now();
             return;
           }
           if (++retries > MAX_RETRIES) throw e;
@@ -224,17 +244,36 @@ class HttpTask extends EventEmitter {
         err.fatal = true;
         throw err;
       }
-      for await (let chunk of res) {
-        if (this.stopped) break;
-        await this.ctx.throttle.take(chunk.length);
-        // Hız sınırlayıcıda beklerken parça bölünmüş olabilir: kalan miktarı yazmadan hemen önce hesapla
+      // Küçük ağ parçalarını biriktirip tek seferde yaz: disk çağrısı ve olay döngüsü yükü azalır
+      let buf = [];
+      let bl = 0;
+      let lastFlush = Date.now();
+      const flush = async () => {
+        if (!bl) return;
+        let data = buf.length === 1 ? buf[0] : Buffer.concat(buf, bl);
+        buf = [];
+        bl = 0;
+        lastFlush = Date.now();
+        // Biriktirirken parça bölünmüş olabilir: kalan miktarı yazmadan hemen önce hesapla
         const rem = this.remainingOf(seg);
-        if (rem <= 0) break;
-        if (chunk.length > rem) chunk = chunk.subarray(0, rem);
-        await this.fh.write(chunk, 0, chunk.length, seg.start + seg.pos);
-        seg.pos += chunk.length;
-        item.downloaded += chunk.length;
-        if (this.remainingOf(seg) <= 0) break;
+        if (rem <= 0) return;
+        if (data.length > rem) data = data.subarray(0, rem);
+        await this.fh.write(data, 0, data.length, seg.start + seg.pos);
+        seg.pos += data.length;
+        item.downloaded += data.length;
+      };
+      try {
+        for await (const chunk of res) {
+          if (this.stopped) break;
+          await this.ctx.throttle.take(chunk.length);
+          buf.push(chunk);
+          bl += chunk.length;
+          if (bl >= FLUSH_BYTES || bl >= this.remainingOf(seg) || Date.now() - lastFlush > FLUSH_MS) await flush();
+          if (this.remainingOf(seg) <= 0) break;
+        }
+      } finally {
+        // Bağlantı kopsa veya duraklatılsa bile alınmış veriyi kaybetme
+        await flush().catch(() => {});
       }
       if (!this.stopped && seg.end != null && this.remainingOf(seg) > 0) throw new Error('Bağlantı erken kapandı');
       if (seg.end == null && !this.stopped && !res.complete) throw Object.assign(new Error('Bağlantı koptu'), { fatal: !item.resumable });
