@@ -182,6 +182,8 @@ class DownloadManager extends EventEmitter {
     const queued = [...this.items.values()].filter((i) => i.status === 'queued').sort((a, b) => a.createdAt - b.createdAt);
     for (const it of queued) {
       if (this.tasks.size >= max) break;
+      // Duraklatılan eski görev hâlâ kapanıyorsa bekle; bitince finally → schedule() yeniden başlatır
+      if (this.tasks.has(it.id)) continue;
       this.startTask(it);
     }
   }
@@ -256,7 +258,9 @@ class DownloadManager extends EventEmitter {
 
   resume(id) {
     const it = this.items.get(id);
-    if (!it || it.status === 'completed' || this.tasks.has(id)) return;
+    if (!it || it.status === 'completed') return;
+    const running = this.tasks.get(id);
+    if (running && !running.stopped) return;
     it.status = 'queued';
     it.error = null;
     this.emitItem(it);
